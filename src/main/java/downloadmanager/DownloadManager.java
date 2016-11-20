@@ -2,6 +2,8 @@ package downloadmanager;
 
 import file.DownloadFile;
 
+import java.util.List;
+
 public interface DownloadManager {
-    LoadStatus loadFile(DownloadFile downloadFile);
+    LoadStatus loadFile(List<DownloadFile> downloadFile);
 }
