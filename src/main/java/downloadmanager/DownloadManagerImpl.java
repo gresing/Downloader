@@ -1,13 +1,12 @@
 package downloadmanager;
 
-import com.sun.scenario.effect.impl.sw.sse.SSEBlend_SRC_OUTPeer;
 import file.DownloadFile;
+import filemanager.FileManager;
+import filemanager.FileManagerImpl;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.MalformedURLException;
+import java.io.*;
+import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -34,7 +33,6 @@ public class DownloadManagerImpl implements DownloadManager {
             throw new IllegalArgumentException("Arguments must contain 4 values. For example \"-n 5 -l 2000k -o output_folder -f links.txt\"");
         }
         parseArgPairs(argPairs);
-        System.out.println(this);
     }
 
     private void parseArgPairs(String[] argPairs) {
@@ -42,16 +40,23 @@ public class DownloadManagerImpl implements DownloadManager {
             String[] arg = args.split(" ");
             switch (arg[0]) {
                 case "n":
-                    this.threadCount = parseInt(arg[1]);
+                    try {
+                        this.threadCount = Integer.valueOf(arg[1]);
+                    } catch (NumberFormatException e) {
+                        throw new IllegalArgumentException("Thread count parameter must contain integer but founded - " + arg[1], e);
+                    }
                     break;
                 case "l":
-                    this.speedLimit = parseInt(arg[1]);
+                    this.speedLimit = parseSpeedLimit(arg[1]);
                     break;
                 case "o":
                     this.destination = arg[1];
                     break;
                 case "f":
                     this.loadFilePath = arg[1];
+                    FileManager fileManager = new FileManagerImpl();
+                    fileManager.parseFile(arg[1]);
+                    this.downloadFiles = fileManager.getFiles();
                     break;
                 default:
                     throw new IllegalArgumentException("Incorrect argument " + args);
@@ -59,23 +64,30 @@ public class DownloadManagerImpl implements DownloadManager {
         }
     }
 
+    private int parseSpeedLimit(String stringValue) {
+        Multiplier multiplier = Multiplier.getMultiplierByChr(stringValue.substring(stringValue.length() - 1, stringValue.length()));
+        if (multiplier == Multiplier.NO_MULTIPLIER) {
+            return Integer.valueOf(stringValue);
+        }
+        String val = stringValue.substring(0, stringValue.length() - multiplier.chr.length());
+        return Integer.valueOf(val) * multiplier.multiplierValue;
+    }
+
     @Override
-    public LoadStatus loadFile(List<DownloadFile> downloadFile) {
+    public LoadStatus loadFiles(List<DownloadFile> downloadFiles) {
         ExecutorService ex = Executors.newFixedThreadPool(threadCount);
-        List<String> strings = Arrays.asList(new String[]{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"});
-        for (String string : strings)
+        for (DownloadFile downloadFile : downloadFiles) {
             ex.execute(() -> {
-                String threadName = Thread.currentThread().getName();
-                System.out.println("Hello " + threadName + ":" + string);
                 try {
-                    loadFile();
+                    loadFile(downloadFile);
                 } catch (IOException | InterruptedException e) {
                     e.printStackTrace();
                 }
-
             });
-        ex.shutdown();
+        }
+
         try {
+            ex.shutdown();
             ex.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
         } catch (InterruptedException e) {
 
@@ -87,36 +99,48 @@ public class DownloadManagerImpl implements DownloadManager {
         return null;
     }
 
-    private int parseInt(String stringValue) {
-        int mn = 1;
-        if (stringValue.endsWith("k")) {
-            stringValue = stringValue.substring(1, stringValue.length() - 1);
-            mn = 1024;
+    private enum Multiplier {
+        K("k", 1024),
+        M("m", 1024 * 1024),
+        NO_MULTIPLIER("", 1);
+
+        private String chr;
+        private int multiplierValue;
+
+        Multiplier(String chr, int multiplierValue) {
+            this.chr = chr;
+            this.multiplierValue = multiplierValue;
         }
-        int value;
-        try {
-            value = Integer.parseInt(stringValue);
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("Expected integer argument. Received " + stringValue, e);
+
+        public static Multiplier getMultiplierByChr(String chr) {
+            for (Multiplier multiplier : Multiplier.values()) {
+                if (multiplier.chr.equals(chr)) {
+                    return multiplier;
+                }
+            }
+            return Multiplier.NO_MULTIPLIER;
         }
-        return value * mn;
     }
 
-    private void loadFile() throws IOException, InterruptedException {
-        InputStream input = new URL("www.yandex.ru").openStream();
-        byte[] b = new byte[speedLimit];
-        long lastSleepTime = System.currentTimeMillis();
-        while (true) {
-            long timeElapsed = System.currentTimeMillis() - lastSleepTime;
-            if (input.read(b) == 0)
-                break;
-            Thread.sleep(Math.max(1000 - timeElapsed, 0));
-            lastSleepTime = System.currentTimeMillis();
-            System.out.println("readed " + lastSleepTime);
-
+    private void loadFile(DownloadFile downloadFile) throws IOException, InterruptedException {
+        HttpURLConnection connection = (HttpURLConnection) new URL(downloadFile.getURL()).openConnection();
+        if (connection.getResponseCode() == HttpURLConnection.HTTP_OK) {
+            InputStream input = connection.getInputStream();
+            byte[] b = new byte[speedLimit];
+            long lastSleepTime = System.currentTimeMillis();
+            int read;
+            OutputStream outputStream = new FileOutputStream(new File(downloadFile.getSaveName()));
+            while (((read = input.read(b)) != -1)) {
+                System.out.println("readed " + read + " bytes");
+                outputStream.write(b, 0, read);
+                long timeElapsed = System.currentTimeMillis() - lastSleepTime;
+                Thread.sleep(Math.max(1000 - timeElapsed, 0));
+                lastSleepTime = System.currentTimeMillis();
+            }
+            System.out.println("one readed finished");
+            input.close();
+        } else {
+            System.out.println("Can not connect to " + downloadFile.getURL());
         }
-        input.close();
-        System.out.println(b);
-
     }
 }

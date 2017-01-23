@@ -17,6 +17,6 @@ public class Main {
         String[] tempArray = argsString.split("-");
         String[] argPairs = Arrays.copyOfRange(tempArray, 1, tempArray.length);
         DownloadManager dm = new DownloadManagerImpl(argPairs);
-        dm.loadFile(null);
+        dm.loadFiles(null);
     }
 }
