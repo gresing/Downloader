@@ -9,6 +9,7 @@ public class FileManagerImpl implements FileManager {
 
     List<DownloadFile> files = new ArrayList<>();
 
+
     public void parseFile(String filePath) {
 
     }
